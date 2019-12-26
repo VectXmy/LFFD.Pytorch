@@ -26,14 +26,22 @@ class ResV1Block(nn.Module):
     '''
     basic residual block v1
     '''
-    def __init__(self,in_channels,out_channels,stride=1,padding=1):
+    def __init__(self,in_channels,out_channels,stride=1,padding=1,BN=True):
         super().__init__()
         self.conv1=nn.Conv2d(in_channels,out_channels,kernel_size=3,stride=stride,padding=padding)
         self.conv2=nn.Conv2d(out_channels,out_channels,kernel_size=3,stride=1,padding=1)
+        self.BN=BN
+        if self.BN:
+            self.bn1=nn.BatchNorm2d(out_channels)
+            self.bn2=nn.BatchNorm2d(out_channels)
     def forward(self,x):
         out=self.conv1(x)
+        if self.BN:
+            out=self.bn1(out)
         out=F.relu(out)
         out=self.conv2(out)
+        if self.BN:
+            out=self.bn2(out)
         out+=x
         out=F.relu(out)
         return out
@@ -44,15 +52,20 @@ class ResV2Block(nn.Module):
     '''
     def __init__(self,in_channels,out_channels,stride=1,padding=1,BN=False):
         super().__init__()
-        self.bn1=nn.BatchNorm2d(in_channels)
+        self.BN=BN
+        if BN:
+            self.bn1=nn.BatchNorm2d(in_channels)
+            self.bn2=nn.BatchNorm2d(out_channels)
         self.conv1=nn.Conv2d(in_channels,out_channels,kernel_size=3,stride=stride,padding=padding)
         self.conv2=nn.Conv2d(out_channels,out_channels,kernel_size=3,stride=1,padding=1)
-        self.bn2=nn.BatchNorm2d(out_channels)
+        
     def forward(self,x):
-        x=self.bn1(x)
+        if self.BN:
+            x=self.bn1(x)
         out=F.relu(x)
         out=self.conv1(x)
-        out=self.bn2(out)
+        if self.BN:
+            out=self.bn2(out)
         out=F.relu(out)
         out=self.conv2(out)
         out+=x
@@ -140,6 +153,16 @@ class LFFD(nn.Module):
                 self.relu4_3=nn.ReLU()
                 self.branch8=Head(self.chs[2],self.head_chs,self.class_num)
 
+                if self.BN:
+                    self.bn1_1=nn.BatchNorm2d(chs[0])
+                    self.bn1_2=nn.BatchNorm2d(chs[0])
+                    self.bn2_1=nn.BatchNorm2d(chs[1])
+                    self.bn2_2=nn.BatchNorm2d(chs[1])
+                    self.bn3_1=nn.BatchNorm2d(chs[2])
+                    self.bn4_1=nn.BatchNorm2d(chs[3])
+                    self.bn4_2=nn.BatchNorm2d(chs[3])
+                    self.bn4_3=nn.BatchNorm2d(chs[3])
+
         self.initialize_weights()
     
     def initialize_weights(self): 
@@ -161,12 +184,16 @@ class LFFD(nn.Module):
                 x=self.downsample_conv1(x)
 
                 x=self.stage1_1(x)
+                if self.BN:
+                    x=self.bn1_1(x)
                 x=self.relu1_1(x)
                 cls_1,reg_1=self.branch1(x)
                 cls_logits.append(cls_1)
                 reg_preds.append(reg_1)
 
                 x=self.stage1_2(x)
+                if self.BN:
+                    x=self.bn1_2(x)
                 x=self.relu1_2(x)
                 cls_2,reg_2=self.branch2(x)
                 cls_logits.append(cls_2)
@@ -175,12 +202,16 @@ class LFFD(nn.Module):
                 x=self.downsample_conv2(x)
 
                 x=self.stage2_1(x)
+                if self.BN:
+                    x=self.bn2_1(x)
                 x=self.relu2_1(x)
                 cls_3,reg_3=self.branch3(x)
                 cls_logits.append(cls_3)
                 reg_preds.append(reg_3)
 
                 x=self.stage2_2(x)
+                if self.BN:
+                    x=self.bn2_2(x)
                 x=self.relu2_2(x)
                 cls_4,reg_4=self.branch4(x)
                 cls_logits.append(cls_4)
@@ -189,6 +220,8 @@ class LFFD(nn.Module):
                 x=self.downsample_conv3(x)
 
                 x=self.stage3_1(x)
+                if self.BN:
+                    x=self.bn3_1(x)
                 x=self.relu3_1(x)
                 cls_5,reg_5=self.branch5(x)
                 cls_logits.append(cls_5)
@@ -197,18 +230,24 @@ class LFFD(nn.Module):
                 x=self.downsample_conv4(x)
 
                 x=self.stage4_1(x)
+                if self.BN:
+                    x=self.bn4_1(x)
                 x=self.relu4_1(x)
                 cls_6,reg_6=self.branch6(x)
                 cls_logits.append(cls_6)
                 reg_preds.append(reg_6)
 
                 x=self.stage4_2(x)
+                if self.BN:
+                    x=self.bn4_2(x)
                 x=self.relu4_2(x)
                 cls_7,reg_7=self.branch7(x)
                 cls_logits.append(cls_7)
                 reg_preds.append(reg_7)
 
                 x=self.stage4_3(x)
+                if self.BN:
+                    x=self.bn4_3(x)
                 x=self.relu4_3(x)
                 cls_8,reg_8=self.branch8(x)
                 cls_logits.append(cls_8)
