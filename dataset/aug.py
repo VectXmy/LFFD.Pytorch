@@ -1,4 +1,7 @@
 import albumentations as A
+import cv2
+import random
+import numpy as np
 
 
 BOX_COLOR = (255, 0, 0)
@@ -53,14 +56,96 @@ color_aug=A.Compose([
     A.RandomBrightness(limit=0.1,p=0.5),
     A.RandomContrast(limit=0.1,p=0.5),
     A.GaussNoise(p=0.5),
-    A.HueSaturationValue(p=0.5)
+    A.HueSaturationValue(p=0.5),
 ])
 
 pix_aug=A.Compose([
     A.HorizontalFlip(p=0.5),
-    A.Rotate(limit=5,p=0.5),
+    A.Rotate(limit=2,p=0.5),
     # A.RandomCropNearBBox(p=0.5),
 ],bbox_params={'format':'pascal_voc','min_area':10,'label_fields': ['category_id']})
+
+
+def lffd_random_resize(img,boxes,classes,sizes=[(10,15),(15,20),(20,40),(40,70),(70,110),(110,250),(250,400),(400,560)],final_size=(640,640)):
+    o_h,o_w=img.shape[:2]
+    d_h,d_w=final_size# 目标尺寸
+
+    box_num=len(boxes)
+    size_num=len(sizes)
+    random_box_ind=random.randint(0,box_num-1)
+    random_size_ind=random.randint(0,size_num-1)
+
+    selected_box=boxes[random_box_ind]#随机选择的box
+    selected_size=random.randint(sizes[random_size_ind][0],sizes[random_size_ind][1])#随机选一个scale
+    
+    s_b_h,s_b_w=selected_box[3]-selected_box[1],selected_box[2]-selected_box[0]
+    
+    s_b_size=(s_b_h+s_b_w)/2
+    scale=selected_size/s_b_size
+    nw, nh  = int(scale * o_w), int(scale * o_h)
+    try:
+        img_resized = cv2.resize(img, (nw, nh))
+    except:
+        print("oh! too large!!")
+        return img,boxes,classes
+    
+    boxes=boxes*scale
+    s_b_center_point=(int((selected_box[3]+selected_box[1])*scale/2),int((selected_box[2]+selected_box[0])*scale/2))#(y,x) format
+    y_range=(int(max(s_b_center_point[0]-d_h/2,0)),int(min(d_h/2+s_b_center_point[0],nh)))
+    x_range=(int(max(s_b_center_point[1]-d_w/2,0)),int(min(d_w/2+s_b_center_point[1],nw)))
+    # print(x_range,y_range,scale,(nh,nw))
+    
+
+    img_center_croped=img_resized[y_range[0]:y_range[1],x_range[0]:x_range[1],:].copy()
+    c_h,c_w=img_center_croped.shape[:2]
+    
+    _img=np.zeros([d_h,d_w,3],dtype=np.uint8)
+    _img[:c_h,:c_w]=img_center_croped
+
+    off_y=y_range[0]
+    off_x=x_range[0]
+    boxes[:,0::2]-=off_x# scaled boxes加上相对偏移
+    boxes[:,1::2]-=off_y 
+    _boxes=[]
+    _classes=[]
+    for b,c in zip(boxes,classes):
+        x1,y1,x2,y2=b
+        cond1= ((0<=x1<c_w) and (0<=y1<c_h)) 
+        cond2= ((0<=x2<c_w) and (0<=y2<c_h))
+        if not (cond1 or cond2):#超出crop的范围
+            continue
+        
+        elif cond1 and (not cond2):
+            if (0<=x2<c_w):
+                y2=c_h-1
+            elif (0<=y2<c_h):
+                x2=c_w-1
+            else:
+                x2=c_w-1
+                y2=c_h-1
+        elif cond2 and (not cond1):
+            if (0<=x1<c_w):
+                y1=0
+            elif (0<=y1<c_h):
+                x1=0
+            else:
+                x1=0
+                y1=0
+        else:
+            pass    
+        b_w=(x2-x1)
+        b_h=(y2-y1)
+        if b_h/max(b_w,1) >=4 or b_w/max(b_h,1)>=4:
+            continue
+        if max(b_w,b_h)<sizes[0][0]:#小于最小尺寸
+            continue
+        _boxes.append([x1,y1,x2,y2])
+        _classes.append(c)
+    _boxes=np.array(_boxes,dtype=np.float32)
+
+    return _img,_boxes,_classes
+
+
 
 if __name__ == "__main__":
     '''

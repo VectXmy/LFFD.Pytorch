@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 from torchvision import transforms
 from .aug import augment_and_show as augment_apply
+from .aug import lffd_random_resize
 
 class VOCDataset(torch.utils.data.Dataset):
     CLASSES_NAME = (
@@ -19,7 +20,7 @@ class VOCDataset(torch.utils.data.Dataset):
         "hat",
         "person"
     )
-    def __init__(self,root_dir,resize_size=[640,640],split='trainval',use_difficult=True,augmentator=[]):
+    def __init__(self,root_dir,resize_size=[640,640],split='trainval',use_difficult=True,random_sampling=False,augmentator=[]):
         self.root=root_dir
         self.use_difficult=use_difficult
         self.imgset=split
@@ -36,6 +37,7 @@ class VOCDataset(torch.utils.data.Dataset):
         self.mean=[0.485, 0.456, 0.406]
         self.std=[0.229, 0.224, 0.225]
         self.augmentator=augmentator
+        self.random_sampling=random_sampling # True only for training !!!!!!!!!!!
         print("INFO=====>voc dataset init finished  ! !")
         if len(self.augmentator)>0:
             print("INFO====>add augmentation")
@@ -55,6 +57,7 @@ class VOCDataset(torch.utils.data.Dataset):
         
         img_id=self.img_ids[index]
         img=self._read_img_rgb(self._imgpath%img_id)
+        # cv2.imwrite("./%s.jpg"%img_id,img)
         orig_size=img.shape[:2]
 
         anno=ET.parse(self._annopath%img_id).getroot()
@@ -104,6 +107,10 @@ class VOCDataset(torch.utils.data.Dataset):
         boxes=np.array(boxes,dtype=np.float32)
         img,boxes,scale=self.preprocess_img_boxes(img,boxes,self.resize_size)
         
+        #################### Random sampling for each scale ##################
+        if self.random_sampling:
+            img,boxes,classes=lffd_random_resize(img,boxes,classes,final_size=self.resize_size)
+        ######################################################################
 
         img=transforms.ToTensor()(img)#!!!!!!!!!!!!!! ToTensor() only scales narray of np.uint8!!!!!!!!!!
         boxes=torch.tensor(boxes,dtype=torch.float32)
@@ -166,9 +173,12 @@ class VOCDataset(torch.utils.data.Dataset):
             n=boxes_list[i].shape[0]
             if n>max_num:max_num=n   
         for i in range(batch_size):
-            pad_boxes_list.append(torch.nn.functional.pad(boxes_list[i],(0,0,0,max_num-boxes_list[i].shape[0]),value=-1))
-            pad_classes_list.append(torch.nn.functional.pad(classes_list[i],(0,max_num-classes_list[i].shape[0]),value=-1))
-        
+            if boxes_list[i].shape[0]==0:
+                pad_boxes_list.append(torch.full([max_num,4],fill_value=-1,dtype=torch.float32))
+                pad_classes_list.append(torch.full([max_num,],fill_value=-1,dtype=torch.int64))
+            else:
+                pad_boxes_list.append(torch.nn.functional.pad(boxes_list[i],(0,0,0,max_num-boxes_list[i].shape[0]),value=-1))
+                pad_classes_list.append(torch.nn.functional.pad(classes_list[i],(0,max_num-classes_list[i].shape[0]),value=-1))
 
         batch_boxes=torch.stack(pad_boxes_list)
         batch_classes=torch.stack(pad_classes_list)
@@ -179,12 +189,12 @@ class VOCDataset(torch.utils.data.Dataset):
 
 if __name__ == "__main__":
     from aug import color_aug,pix_aug
-    dataset=VOCDataset("/home/xht/dataset/VOC2028",augmentator=[color_aug,pix_aug])
+    dataset=VOCDataset("/home/xht/Datasets/VOC2028",augmentator=[],random_sampling=True)
     print(len(dataset))
-    imgs,boxes,classes,scales,orig_sizes=dataset.collate_fn([dataset[100],dataset[101],dataset[200],dataset[500]])
-    print(boxes,classes,scales,orig_sizes,"\n",imgs.shape,boxes.shape,classes.shape,imgs.dtype,boxes.dtype,classes.dtype)
+    imgs,boxes,classes,scales,orig_sizes=dataset.collate_fn([dataset[100],dataset[101],dataset[200],dataset[500],dataset[10],dataset[11]])
+    # print(boxes,classes,scales,orig_sizes,"\n",imgs.shape,boxes.shape,classes.shape,imgs.dtype,boxes.dtype,classes.dtype)
     for index,i in enumerate(imgs):
-        i=i.numpy().astype(np.uint8)
+        i=i.numpy().astype(np.uint8)*255
         i=np.transpose(i,(1,2,0))
         i=cv2.cvtColor(i,cv2.COLOR_RGB2BGR)
         print(i.shape,type(i))
